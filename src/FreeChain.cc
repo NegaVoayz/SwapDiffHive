@@ -44,10 +44,14 @@ bool FreeChain::on_chain(Id p) {
     return p == free_top || prev(p) != npos;
 }
 
-size_t FreeChain::get_empty_slot(bool no_enlarge) {
-    // if no empty slot, return npos or enlarge by 1
-    if (no_enlarge || free_top != npos) return free_top;
-    return new_slot();
+size_t FreeChain::get_empty_slot() {
+    // free_top is npos exactly when the chain is empty: enlarge by one slot
+    if (free_top == npos) free_top = new_slot();
+    return free_top;
+}
+
+size_t FreeChain::peek_empty_slot() const {
+    return free_top;
 }
 
 void FreeChain::free(size_t p) {

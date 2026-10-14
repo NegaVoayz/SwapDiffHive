@@ -2,6 +2,11 @@
 #include <vector>
 #include "Def.hh"
 
+// A doubly linked list of free slots, usable on its own as the allocation layer
+// of a plain hive: get_empty_slot() reuses a free slot and grows the structure
+// by one when it is full, while peek_empty_slot() only probes for a free slot.
+// free()/use() are non-definitive (idempotent) so a caller may repeat them;
+// flip() is the definitive toggle the diff hive relies on.
 class FreeChain {
     private:
         struct Node {
@@ -25,7 +30,9 @@ class FreeChain {
         bool on_chain(Id p);
 
     public:
-        size_t get_empty_slot(bool no_enlarge = false);
+        size_t get_empty_slot();
+
+        size_t peek_empty_slot() const;
 
         void free(size_t p);
 
