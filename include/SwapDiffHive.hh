@@ -1,14 +1,14 @@
 #pragma once
 #include <algorithm>
+#include <deque>
 #include <exception>
 #include <functional>
 #include <utility>
-#include <vector>
 #include "Def.hh"
 #include "Diff.hh"
 #include "FreeChain.hh"
 
-template<typename T>
+template<typename T, template<typename> typename Container = std::deque>
 class SwapDiffHive {
     private:
         struct Slot {
@@ -17,13 +17,13 @@ class SwapDiffHive {
         };
         
         FreeChain data_link{};
-        std::vector<Slot> data{};
+        Container<Slot> data{};
         
         FreeChain temp_link{};
-        std::vector<Slot> temp{};
+        Container<Slot> temp{};
 
         Id current_pos = npos;
-        std::vector<Diff> history{};
+        Container<Diff> history{};
         
         void apply_unary(const Diff::Unary& unary) {
             data[unary.data_id].book ^= unary.diff_id;
@@ -123,9 +123,9 @@ class SwapDiffHive {
 
 #ifdef SWAP_DIFF_HIVE_TEST
         // read-only views of the stored slots, for tests/ only
-        const std::vector<Slot>& test_data() const { return data; }
-        const std::vector<Slot>& test_temp() const { return temp; }
-        const std::vector<Diff>& test_history() const { return history; }
+        const Container<Slot>& test_data() const { return data; }
+        const Container<Slot>& test_temp() const { return temp; }
+        const Container<Diff>& test_history() const { return history; }
         Id test_position() const { return current_pos; }
 #endif
 };
