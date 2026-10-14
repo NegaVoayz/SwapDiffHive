@@ -71,17 +71,6 @@ class SwapDiffHive {
             apply_diff(history[current_pos]);
         }
 
-        // last index in history with diff_id' <= diff_id; the unsigned
-        // wraparound yields npos when diff_id is older than history[0]
-        Id target_index(Id diff_id) const {
-            const auto it = std::upper_bound(
-                history.begin(), history.end(), diff_id,
-                [](Id value, const Diff& d) {
-                    return value < d.common.diff_id;
-                });
-            return static_cast<Id>(std::distance(history.begin(), it)) - 1;
-        }
-
     public: 
         
         void remove(Id diff_id, Id data_id) {
@@ -96,16 +85,15 @@ class SwapDiffHive {
         }
 
         void seek(Id diff_id) {
-            Id target = target_index(diff_id);
-
-            // seek backwards: history[current_pos], ..., history[target + 1]
-            while (current_pos != target && current_pos != npos) {
+            // diff ids start at 1 (a 0 would make the book xor a no-op), so 0
+            // asks for the state before everything that is left
+            while (current_pos != npos && history[current_pos].common.diff_id > diff_id) {
                 apply_diff(history[current_pos]);
                 --current_pos;
             }
 
-            // seek forwards: history[0], history[1], ..., history[target]
-            while (current_pos != target) {
+            // then re-apply up to the end of the target block
+            while (current_pos + 1 < history.size() && history[current_pos + 1].common.diff_id <= diff_id) {
                 ++current_pos;
                 apply_diff(history[current_pos]);
             }
