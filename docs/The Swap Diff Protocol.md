@@ -23,15 +23,6 @@ A general protocol for any struct without pointers to keep a certain length of t
 | 3    | insert B(apply)            | *B*  | *0*       | *A*   | *2*       |
 | 4    | insert B(apply) *roll back | *A*  | *2*       | *B*   | *0*       |
 
-#### Update Example
-
-| Time | Operation                          | Data | data book | Temp  | temp book |
-| ---- | ---------------------------------- | ---- | --------- | ----- | --------- |
-| 1    | initial                            | A    | 0         | \     | 0         |
-| 2    | replace A with B(prepare)          | A    | 0         | **B** | 0         |
-| 2    | replace A with B(apply)            | *B*  | 0         | *A*   | **2**     |
-| 3    | replace A with B(apply) *roll back | *A*  | 0         | *B*   | **0**     |
-
 In the normal data array, book means 0(in use) and x(removed at x),
 
 while in the temp array, book means 0(invalid) and x(removed at x).
