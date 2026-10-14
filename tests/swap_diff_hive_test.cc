@@ -1,9 +1,5 @@
 // Protocol tests for SwapDiffHive, following docs/The Swap Diff Protocol.md.
-//
-// The suite runs two groups:
-//   * the protocol tests, registered with ctest as "hive_protocol"
-//   * a characterization of one open issue, only run with --known-issues and
-//     registered as a disabled test until the issue is addressed
+// Registered with ctest as "hive_protocol".
 #include "SwapDiffHive.hh"
 #include <cstdio>
 #include <iterator>
@@ -245,20 +241,168 @@ void known_issue_rollback_past_compaction() {
     check(h.test_temp()[0].book == 0, "the temp slot stays empty");
 }
 
+// Compaction must keep a record that a remaining diff still needs, even when its
+// book is below the limit: with two free slots the reuse order decouples the
+// parked book from the neighbouring diff ids.
+void compact_keeps_needed_records() {
+    std::printf("[compaction keeps needed records]\n");
+    Hive h;
+    h.insert(1, "A");
+    h.insert(2, "B");
+    h.remove(3, 0);
+    h.remove(4, 1);
+    h.insert(5, "C");   // reuses slot 1, parks B(4) in temp[0]
+    h.insert(6, "D");   // reuses slot 0, parks A(3) in temp[1]
+    check(h.compact(5), "compaction runs at the head");
+    check(h.test_history().size() == 2, "only the ids below the limit are wiped");
+    check(h.test_temp()[1].book == 3, "the record diff 6 parked is kept although its book is below the limit");
+
+    h.undo();
+    check(live(h).size() == 1 && live(h).at(1) == "C", "undoing diff 6 leaves C live");
+    check(h.test_data()[0].data == "A" && h.test_data()[0].book == 3, "A comes back deleted at diff 3, not live");
+
+    Hive g;
+    g.insert(1, "A");
+    g.insert(2, "B");
+    g.remove(3, 0);
+    g.remove(4, 1);
+    g.insert(5, "C");
+    g.insert(6, "D");
+    check(g.compact(6), "compaction to the newest diff");
+    check(g.test_temp()[0].book == 0, "the record of the wiped diff 5 is dropped");
+    check(g.test_temp()[1].book == 3, "the record of the remaining diff 6 is kept");
+}
+
+// The container is a template parameter, so the protocol must not depend on it.
+void vector_container() {
+    std::printf("[std::vector as the container]\n");
+    SwapDiffHive<std::string, std::vector> h;
+    const Id a = h.insert(1, "A");
+    h.remove(2, a);
+    const Id b = h.insert(3, "B");
+    check(b == a && h.test_data()[0].data == "B" && h.test_data()[0].book == 0, "same behaviour as the deque default");
+    h.seek(2);
+    check(h.test_data()[0].data == "A" && h.test_data()[0].book == 2, "rollback works on std::vector");
+    h.seek(3);
+    check(h.compact(3), "compaction works on std::vector");
+    check(h.test_history().size() == 1 && h.test_temp()[0].book == 2,
+          "wiping and record protection work on std::vector");
+}
+
+// undo()/redo() step one transaction at a time and never land inside a group.
+void undo_redo_ops() {
+    std::printf("[undo()/redo()]\n");
+    Hive h;
+    h.insert(1, "A");
+    h.remove(2, 0);
+    h.insert(2, "B");   // diffs 2 and 2 are one transaction
+    h.insert(3, "C");
+    check(live(h).size() == 2, "two live elements");
+
+    h.undo();
+    check(live(h).size() == 1 && live(h).at(0) == "B", "undo steps back one transaction");
+    h.undo();
+    check(live(h).size() == 1 && live(h).at(0) == "A", "undo steps over the whole id-2 group at once");
+    h.undo();
+    check(live(h).empty(), "undo again reaches the initial state");
+    h.undo();
+    check(live(h).empty(), "undo at the bottom is a no-op");
+
+    h.redo();
+    check(live(h).size() == 1 && live(h).at(0) == "A", "redo re-applies the first transaction");
+    h.redo();
+    check(live(h).size() == 1 && live(h).at(0) == "B", "redo re-applies the group");
+    h.redo();
+    check(live(h).size() == 2, "redo reaches the head");
+    h.redo();
+    check(live(h).size() == 2, "redo at the head is a no-op");
+}
+
+// 0 is not a diff id, so it asks for the beginning: every diff that is left is
+// rolled back, and the state it lands on is real rather than fabricated.
+void rollback_to_beginning() {
+    std::printf("[rollback to the beginning]\n");
+    Hive h;
+    for (Id i = 1; i <= 4; ++i) h.insert(i, std::string(1, char('A' + i - 1)));
+    h.seek(0);
+    check(live(h).empty(), "without compaction every diff is rolled back");
+
+    Hive g;
+    g.insert(1, "A");
+    g.remove(2, 0);
+    g.insert(3, "B");
+    g.insert(4, "C");
+    check(g.compact(3), "compacts to the earliest traceable diff");
+    check(g.test_history().size() == 2, "the ids below the limit are wiped");
+
+    g.seek(0);
+    check(g.test_position() == npos, "every remaining diff is rolled back");
+    check(live(g).empty(), "nothing is live, A included");
+    check(g.test_data()[0].data == "A" && g.test_data()[0].book == 2, "A is restored as deleted");
+
+    g.undo();
+    check(g.test_position() == npos, "there is nothing left to undo");
+    g.redo();
+    check(g.test_position() == 0 && live(g).size() == 1, "redo re-applies the first remaining diff");
+
+    Hive k;
+    k.insert(1, "A");
+    k.remove(2, 0);
+    k.insert(3, "B");
+    k.insert(4, "C");
+    k.compact(3);
+    k.seek(2);
+    check(k.test_position() == npos && live(k).empty(),
+          "a target below the wiped ids lands at the start of what is left");
+    check(k.test_data()[0].data == "A" && k.test_data()[0].book == 2,
+          "and it is a real state: A deleted, nothing live");
+}
+
+// One step is one whole block, keyed by the diff ids: with the history
+// 1 1 2 2 4 4 4 sitting at the end of the id-2 block, redo must land past the
+// three id-4 diffs and undo must land at the end of the id-1 block.
+void block_steps() {
+    std::printf("[one block per step]\n");
+    Hive h;
+    h.insert(1, "a"); h.insert(1, "b");
+    h.insert(2, "c"); h.insert(2, "d");
+    h.insert(4, "e"); h.insert(4, "f"); h.insert(4, "g");
+    check(live(h).size() == 7, "seven diffs, seven live elements");
+
+    h.seek(2);                                          // 1 1 2 2(p) 4 4 4
+    check(h.test_position() == 3 && live(h).size() == 4, "parked at the end of the id-2 block");
+
+    h.redo();                                           // 1 1 2 2 4 4 4(p)
+    check(h.test_position() == 6 && live(h).size() == 7, "redo moves over the whole id-4 block");
+
+    h.seek(2);
+    h.undo();                                           // 1 1(p) 2 2 4 4 4
+    check(h.test_position() == 1 && live(h).size() == 2, "undo moves over the whole id-2 block");
+
+    h.undo();
+    check(h.test_position() == npos && live(h).empty(), "undo past the first block leaves nothing applied");
+    h.undo();
+    check(h.test_position() == npos, "undo at the bottom is a no-op");
+    h.redo();
+    check(h.test_position() == 1 && live(h).size() == 2, "redo from the bottom re-applies the first block");
+}
+
 } // namespace
 
-int main(int argc, char** argv) {
-    if (argc > 1 && std::string(argv[1]) == "--known-issues") {
-        known_issue_rollback_past_compaction();
-    } else {
-        doc_insert_example();
-        instant_commit();
-        undo_redo();
-        same_id_transaction();
-        new_op_after_rollback();
-        compaction();
-        randomized_stress();
-    }
+int main() {
+    doc_insert_example();
+    instant_commit();
+    undo_redo();
+    same_id_transaction();
+    new_op_after_rollback();
+    compaction();
+    compact_keeps_needed_records();
+    rollback_past_compaction();
+    rollback_to_beginning();
+    undo_redo_ops();
+    block_steps();
+    vector_container();
+    randomized_stress();
     std::printf("failures: %d\n", failures);
     return failures ? 1 : 0;
 }

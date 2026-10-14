@@ -139,6 +139,27 @@ class SwapDiffHive {
             return true;
         }
 
+        // the two steps used instead of seek: exactly one block of equal diff
+        // ids back or forward, stepped over the history itself so no fabricated
+        // diff id is ever passed around
+        void undo() {
+            if (current_pos == npos) return;                       // nothing applied
+            const Id block = history[current_pos].common.diff_id;
+            while (current_pos != npos && history[current_pos].common.diff_id == block) {
+                apply_diff(history[current_pos]);
+                --current_pos;
+            }
+        }
+
+        void redo() {
+            if (current_pos + 1 >= history.size()) return;         // nothing queued
+            const Id block = history[current_pos + 1].common.diff_id;
+            while (current_pos + 1 < history.size() && history[current_pos + 1].common.diff_id == block) {
+                ++current_pos;
+                apply_diff(history[current_pos]);
+            }
+        }
+
 #ifdef SWAP_DIFF_HIVE_TEST
         // read-only views of the stored slots, for tests/ only
         const Container<Slot>& test_data() const { return data; }
