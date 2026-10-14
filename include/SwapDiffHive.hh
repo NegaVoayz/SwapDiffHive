@@ -59,6 +59,16 @@ class SwapDiffHive {
                 std::bind_front(&SwapDiffHive::apply_binary, this));
         }
 
+        // a new Diff always lands at current_pos + 1 and is committed right
+        // away: on the head that is a push_back, otherwise it overwrites the
+        // deprecated tail, then applying it advances current_pos by 1
+        void commit(Diff diff) {
+            history.resize(current_pos + 1);
+            history.push_back(diff);
+            ++current_pos;
+            apply_diff(history[current_pos]);
+        }
+
         // last index satisfies history[i].common.diff_id <= diff_id
         Id target_index(Id diff_id) const {
             if (history.empty()) return npos;
@@ -80,14 +90,14 @@ class SwapDiffHive {
     public: 
         
         void remove(Id diff_id, Id data_id) {
-            history.push_back(
-                prepare_remove(diff_id, data_id));
+            commit(prepare_remove(diff_id, data_id));
         }
 
         Id insert(Id diff_id, T&& payload) {
             Diff diff = prepare_insert(diff_id, std::move(payload));
-            history.push_back(diff);
-            return diff.common.data_id;
+            const Id data_id = diff.common.data_id;
+            commit(diff);
+            return data_id;
         }
 
         void seek(Id diff_id) {
