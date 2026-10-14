@@ -41,14 +41,16 @@ class SwapDiffHive {
         }
         Diff prepare_insert(Id diff_id, T&& payload) {
             Id data_id = data_link.get_empty_slot();
+            // append fast path: a brand new slot has no old payload to park, so
+            // flipping the book is cheaper than burning a temp slot
             if (data_id == data.size()) {
                 data.emplace_back(std::move(payload), diff_id);
                 return to_diff(Diff::Unary{diff_id, data_id});
             }
 
             Id temp_id = temp_link.get_empty_slot();
-            if (temp_id == temp.size()) temp.emplace_back(std::move(payload), 0);
-            else temp[temp_id] = Slot{std::move(payload), 0};
+            temp.resize(std::max(temp.size(), temp_id + 1));
+            temp[temp_id] = Slot{std::move(payload), 0};
 
             return to_diff(Diff::Binary{diff_id, data_id, temp_id});
         }
@@ -69,22 +71,15 @@ class SwapDiffHive {
             apply_diff(history[current_pos]);
         }
 
-        // last index satisfies history[i].common.diff_id <= diff_id
+        // last index in history with diff_id' <= diff_id; the unsigned
+        // wraparound yields npos when diff_id is older than history[0]
         Id target_index(Id diff_id) const {
-            if (history.empty()) return npos;
-            if (history.back().common.diff_id == diff_id) 
-                return history.size() - 1;
-            auto begin = history.begin();
-            auto end   = history.end();
-
-            auto it = std::upper_bound(
-                begin, end, diff_id,
+            const auto it = std::upper_bound(
+                history.begin(), history.end(), diff_id,
                 [](Id value, const Diff& d) {
                     return value < d.common.diff_id;
                 });
-
-            if (it == begin) return npos;
-            return static_cast<Id>(std::distance(begin, it)) - 1;
+            return static_cast<Id>(std::distance(history.begin(), it)) - 1;
         }
 
     public: 
@@ -117,7 +112,7 @@ class SwapDiffHive {
         }
 
         bool compact_slots(size_t trace_limit) {
-            if (current_pos != history.size()-1) return false;
+            if (current_pos + 1 != history.size()) return false;
             for (Id i = 0; i < temp.size(); ++i)
                 if (temp[i].book && temp[i].book < trace_limit) {
                     temp[i].book = 0;
