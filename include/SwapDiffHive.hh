@@ -120,4 +120,12 @@ class SwapDiffHive {
                 }
             return true;
         }
+
+#ifdef SWAP_DIFF_HIVE_TEST
+        // read-only views of the stored slots, for tests/ only
+        const std::vector<Slot>& test_data() const { return data; }
+        const std::vector<Slot>& test_temp() const { return temp; }
+        const std::vector<Diff>& test_history() const { return history; }
+        Id test_position() const { return current_pos; }
+#endif
 };

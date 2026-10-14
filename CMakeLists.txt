@@ -7,3 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_library(SwapDiffHive STATIC src/FreeChain.cc)
 target_include_directories(SwapDiffHive PUBLIC ${PROJECT_SOURCE_DIR}/include)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
