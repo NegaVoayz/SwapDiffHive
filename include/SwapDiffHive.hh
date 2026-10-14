@@ -111,13 +111,31 @@ class SwapDiffHive {
             }
         }
 
-        bool compact_slots(size_t trace_limit) {
+        // drops everything that can no longer be reached: the history below the
+        // earliest traceable diff, and the temp records no diff left needs
+        bool compact(size_t trace_limit) {
             if (current_pos + 1 != history.size()) return false;
+
+            // history is ordered by diff_id, so the out-of-limit entries are a
+            // prefix and current_pos shifts by exactly that much
+            const auto first_kept = std::lower_bound(
+                history.begin(), history.end(), static_cast<Id>(trace_limit),
+                [](const Diff& d, Id limit) { return d.common.diff_id < limit; });
+
+            // a remaining diff still needs the temporary record it parked, no
+            // matter how old the book on it is
+            Container<char> needed(temp.size(), 0);
+            for (auto it = first_kept; it != history.end(); ++it)
+                if (it->kind == Diff::Kind::Binary) needed[it->binary.temp_id] = 1;
+
             for (Id i = 0; i < temp.size(); ++i)
-                if (temp[i].book && temp[i].book < trace_limit) {
+                if (!needed[i] && temp[i].book && temp[i].book < trace_limit) {
                     temp[i].book = 0;
                     temp_link.free(i);
                 }
+
+            current_pos -= static_cast<Id>(std::distance(history.begin(), first_kept));
+            history.erase(history.begin(), first_kept);
             return true;
         }
 

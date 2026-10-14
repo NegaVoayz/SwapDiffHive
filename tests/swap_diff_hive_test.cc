@@ -150,15 +150,39 @@ void compaction() {
     off.insert(3, "B");
     off.insert(4, "C");
     off.seek(3);
-    check(!off.compact_slots(3), "refuses while the head is not current");
+    check(!off.compact(3), "refuses while the head is not current");
     check(off.test_temp()[0].book == 2, "the refused sweep changed nothing");
 
     Hive h;
     h.insert(1, "A");
     h.remove(2, 0);
     h.insert(3, "B");
-    check(h.compact_slots(3), "compacts at the head");
-    check(h.test_temp()[0].book == 0, "a record older than the trace limit is dropped");
+    check(h.compact(3), "compacts at the head");
+    check(h.test_temp()[0].book == 2, "the record the remaining diff needs is kept");
+    check(h.test_history().size() == 1, "the history older than the limit is wiped");
+    check(h.test_position() == 0, "current_pos tracks the wiped prefix");
+}
+
+// Compaction wipes what lies below the limit. The diffs that remain keep the
+// records they need, so rolling back below the wiped ids still lands on a real
+// state instead of fabricating one: A stays deleted, it does not come back live.
+void rollback_past_compaction() {
+    std::printf("[rollback past the compaction boundary]\n");
+    Hive h;
+    h.insert(1, "A");
+    h.remove(2, 0);
+    h.insert(3, "B");
+    check(h.compact(3), "compaction runs at the head");
+    check(h.test_history().size() == 1, "the ids below the limit are wiped");
+
+    h.seek(2);
+    check(live(h).empty(), "rolling back below the limit undoes the remaining diffs");
+    check(h.test_data()[0].data == "A" && h.test_data()[0].book == 2,
+          "A is restored as deleted at diff 2, not as live");
+    check(h.test_temp()[0].data == "B" && h.test_temp()[0].book == 0, "B is parked in temp");
+
+    h.seek(3);
+    check(live(h).size() == 1 && live(h).at(0) == "B", "seeking back up re-applies the remaining diff");
 }
 
 // Random ops checked against a model of the live set, with undo/redo hops.
@@ -213,7 +237,7 @@ void known_issue_rollback_past_compaction() {
     h.insert(1, "A");
     h.remove(2, 0);
     h.insert(3, "B");
-    check(h.compact_slots(3), "compaction runs at the head");
+    check(h.compact(3), "compaction runs at the head");
     h.seek(2);
     const auto live_now = live(h);
     check(live_now.size() == 1 && live_now.count(0) == 1 && live_now.at(0) == "B",
