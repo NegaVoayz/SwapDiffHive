@@ -1,23 +1,28 @@
 #pragma once
 #include "Def.hh"
+#include <functional>
 #include <utility>
 
 struct Diff {
+    struct Common {
+        Id diff_id;
+        Id data_id;
+    };
+    struct Unary {
+        Id diff_id;
+        Id data_id;
+    };
+    struct Binary {
+        Id diff_id;
+        Id data_id;
+        Id temp_id;
+    };
+
     enum class Kind : std::uint8_t { Unary, Binary } kind;
     union {
-        struct Common {
-            Id diff_id;
-            Id data_id;
-        } common;
-        struct Unary {
-            Id diff_id;
-            Id data_id;
-        } unary;
-        struct Binary {
-            Id diff_id;
-            Id data_id;
-            Id temp_id;
-        } binary;
+        Common common;
+        Unary unary;
+        Binary binary;
     };
 };
 

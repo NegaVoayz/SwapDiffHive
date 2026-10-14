@@ -1,7 +1,12 @@
 #pragma once
+#include <algorithm>
 #include <exception>
+#include <functional>
+#include <utility>
+#include <vector>
 #include "Def.hh"
 #include "Diff.hh"
+#include "FreeChain.hh"
 
 template<typename T>
 class SwapDiffHive {
@@ -50,8 +55,8 @@ class SwapDiffHive {
 
         void apply_diff(const Diff& d) {
             apply(d,
-                std::bind_front(&SwapDiffHive::apply_remove, this),
-                std::bind_front(&SwapDiffHive::apply_insert, this));
+                std::bind_front(&SwapDiffHive::apply_unary, this),
+                std::bind_front(&SwapDiffHive::apply_binary, this));
         }
 
         // last index satisfies history[i].common.diff_id <= diff_id
@@ -81,7 +86,7 @@ class SwapDiffHive {
 
         Id insert(Id diff_id, T&& payload) {
             Diff diff = prepare_insert(diff_id, std::move(payload));
-            history.push_back(to_diff(diff_insert));
+            history.push_back(diff);
             return diff.common.data_id;
         }
 
