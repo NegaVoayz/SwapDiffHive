@@ -31,7 +31,7 @@ target_link_libraries(app PRIVATE SwapDiffHive::SwapDiffHive)
 
 ```cmake
 include(FetchContent)
-FetchContent_Declare(SwapDiffHive GIT_REPOSITORY <url> GIT_TAG v1.0.0)
+FetchContent_Declare(SwapDiffHive GIT_REPOSITORY <url> GIT_TAG v1.0.1)
 FetchContent_MakeAvailable(SwapDiffHive)
 target_link_libraries(app PRIVATE SwapDiffHive::SwapDiffHive)
 ```
