@@ -426,6 +426,68 @@ void element_access() {
     check(h.at(a) == "A2", "and at() answers again once the slot is back in use");
 }
 
+// A transaction groups ops under one diff id: they become one block, commit()
+// closes the group, rollback() undoes it, and misuse is refused.
+void transactions() {
+    std::printf("[transactions]\n");
+    Hive h;
+    h.insert(1, "A");
+    h.begin_transaction(2);
+    const Id b = h.insert("B");
+    const Id c = h.insert("C");
+    h.remove(c);
+    h.commit();
+    check(h.test_history().size() == 4 && live(h).size() == 2, "four ops recorded, two live");
+    check(live(h)[b] == "B" && live(h).count(c) == 0, "and C was removed when the group closed");
+
+    h.undo();
+    check(live(h).size() == 1 && live(h)[0] == "A", "the whole group undoes as one block");
+    h.redo();
+    check(live(h).size() == 2, "and redoes as one block");
+
+    h.begin_transaction(3);
+    h.insert("D");
+    h.remove(b);
+    h.rollback();
+    check(live(h).size() == 2 && live(h).count(b) == 1 && live(h)[b] == "B", "rollback undoes the group");
+    check(h.test_position() == 3 && h.test_history().size() == 4, "and drops it, back to the pre-transaction history");
+    h.redo();
+    check(live(h).size() == 2, "so redo() cannot bring the group back");
+
+    h.begin_transaction(4);
+    h.insert("E");
+    h.commit();
+    check(live(h).size() == 3 && h.test_history().size() == 5,
+          "the next transaction appends to that history");
+
+    auto refused = [](auto&& fn) {
+        try { fn(); return false; } catch (const std::logic_error&) { return true; }
+    };
+    check(refused([&] { h.insert("X"); }) && refused([&] { h.remove(0); }),
+          "the payload-only ops need an open transaction");
+    check(refused([&] { h.commit(); }) && refused([&] { h.rollback(); }),
+          "and commit() and rollback() need one too");
+
+    h.begin_transaction(5);
+    check(refused([&] { h.insert(6, "X"); }) && refused([&] { h.remove(6, 0); }),
+          "an op inside a transaction must not bring its own id");
+    check(refused([&] { h.begin_transaction(7); }), "a transaction cannot start inside one");
+    check(refused([&] { h.seek(1); }) && refused([&] { h.undo(); }) && refused([&] { h.redo(); }),
+          "the history cannot be walked inside one");
+    check(refused([&] { h.compact(1); }) && refused([&] { h.clear_history(); }) && refused([&] { h.clear(); }),
+          "nor dropped inside one");
+    h.commit();
+    check(h.test_history().size() == 5, "an empty transaction changes nothing");
+
+    check(refused([&] { h.begin_transaction(4); }) && refused([&] { h.begin_transaction(3); }),
+          "the transaction id must exceed the current block");
+    check(refused([&] { h.begin_transaction(0); }), "and 0 is not a diff id");
+
+    h.begin_transaction(6);
+    h.rollback();
+    check(live(h).size() == 3 && h.test_position() == 4, "an empty rollback leaves the state alone");
+}
+
 } // namespace
 
 int main() {
@@ -442,6 +504,7 @@ int main() {
     block_steps();
     clearing();
     element_access();
+    transactions();
     vector_container();
     randomized_stress();
     std::printf("failures: %d\n", failures);

@@ -26,7 +26,21 @@ class SwapDiffHive {
 
         Id current_pos = npos;
         Container<Diff> history{};
-        
+
+        // a transaction groups the ops that follow under one diff id; they are
+        // applied as they come, so commit() only closes the group while
+        // rollback() returns to the block that preceded it
+        bool transaction_open = false;
+        bool transaction_wrote = false;
+        Id transaction_id = 0;
+
+        void require_open() const {
+            if (!transaction_open) throw std::logic_error("SwapDiffHive: no transaction is open");
+        }
+        void require_closed() const {
+            if (transaction_open) throw std::logic_error("SwapDiffHive: a transaction is already open");
+        }
+
         void apply_unary(const Diff::Unary& unary) {
             data[unary.data_id].book ^= unary.diff_id;
             data_link.flip(unary.data_id);
@@ -75,17 +89,70 @@ class SwapDiffHive {
             apply_diff(history[current_pos]);
         }
 
-    public: 
-        
-        void remove(Id diff_id, Id data_id) {
+        void remove_with(Id diff_id, Id data_id) {
             commit(prepare_remove(diff_id, data_id));
         }
-
-        Id insert(Id diff_id, T&& payload) {
+        Id insert_with(Id diff_id, T&& payload) {
             Diff diff = prepare_insert(diff_id, std::move(payload));
             const Id data_id = diff.common.data_id;
             commit(diff);
             return data_id;
+        }
+
+    public: 
+        
+        // one op recorded under the id it is given: the form to use outside a
+        // transaction
+        void remove(Id diff_id, Id data_id) {
+            require_closed();
+            remove_with(diff_id, data_id);
+        }
+
+        Id insert(Id diff_id, T&& payload) {
+            require_closed();
+            return insert_with(diff_id, std::move(payload));
+        }
+
+        // inside a transaction the id is the one begin_transaction() was given
+        void remove(Id data_id) {
+            require_open();
+            transaction_wrote = true;
+            remove_with(transaction_id, data_id);
+        }
+
+        Id insert(T&& payload) {
+            require_open();
+            transaction_wrote = true;
+            return insert_with(transaction_id, std::move(payload));
+        }
+
+        // group the ops that follow under one diff id so that they form a single
+        // block: undo() and redo() move the group as a unit, and rollback() lands
+        // exactly where the group started
+        void begin_transaction(Id diff_id) {
+            require_closed();
+            const Id previous = current_pos == npos ? 0 : history[current_pos].common.diff_id;
+            if (diff_id <= previous) {
+                throw std::logic_error("SwapDiffHive: the transaction id must be a new, larger id");
+            }
+            transaction_id = diff_id;
+            transaction_wrote = false;
+            transaction_open = true;
+        }
+
+        // the ops are already applied, so this only closes the group
+        void commit() {
+            require_open();
+            transaction_open = false;
+        }
+
+        // undo the group, drop it, and close it: nothing of it is left for redo()
+        void rollback() {
+            require_open();
+            transaction_open = false;
+            if (!transaction_wrote) return;   // an empty transaction takes nothing back
+            undo();
+            history.resize(current_pos + 1);
         }
 
         // raw slot access: the id has to be a slot of this hive, and a slot that
@@ -108,6 +175,7 @@ class SwapDiffHive {
         }
 
         void seek(Id diff_id) {
+            require_closed();
             // diff ids start at 1 (a 0 would make the book xor a no-op), so 0
             // asks for the state before everything that is left
             while (current_pos != npos && history[current_pos].common.diff_id > diff_id) {
@@ -125,6 +193,7 @@ class SwapDiffHive {
         // drops everything that can no longer be reached: the history below the
         // earliest traceable diff, and the temp records no diff left needs
         bool compact(size_t trace_limit) {
+            require_closed();
             if (current_pos + 1 != history.size()) return false;
 
             // history is ordered by diff_id, so the out-of-limit entries are a
@@ -153,6 +222,7 @@ class SwapDiffHive {
         // forget the history and the records it could roll back to: the state
         // stays as it is and becomes the new baseline
         void clear_history() {
+            require_closed();
             history.clear();
             current_pos = npos;
             temp.clear();
@@ -161,6 +231,7 @@ class SwapDiffHive {
 
         // forget everything, as if the hive had just been constructed
         void clear() {
+            require_closed();
             clear_history();
             data.clear();
             data_link.clear();
@@ -170,6 +241,7 @@ class SwapDiffHive {
         // ids back or forward, stepped over the history itself so no fabricated
         // diff id is ever passed around
         void undo() {
+            require_closed();
             if (current_pos == npos) return;                       // nothing applied
             const Id block = history[current_pos].common.diff_id;
             while (current_pos != npos && history[current_pos].common.diff_id == block) {
@@ -179,6 +251,7 @@ class SwapDiffHive {
         }
 
         void redo() {
+            require_closed();
             if (current_pos + 1 >= history.size()) return;         // nothing queued
             const Id block = history[current_pos + 1].common.diff_id;
             while (current_pos + 1 < history.size() && history[current_pos + 1].common.diff_id == block) {

@@ -64,6 +64,16 @@ Diff ids are the only ordering device:
 
 A fresh id after a rollback joins nothing: the rollback already dropped the diffs above the position, so the id it reuses no longer exists.
 
+The API turns that grouping into a transaction: `begin_transaction(id)` makes the
+ops that follow share `id`, `commit()` closes the group without touching the
+state (the ops were applied as they came) and `rollback()` undoes the group and
+closes it. A rollback also drops the group from the history, so `redo()` cannot
+bring it back. The id has to be larger than the id of the block that precedes it,
+so a transaction is always a block of its own and the rollback lands exactly
+where it started. Inside a transaction the ops do not carry an id, and walking or
+dropping the history (`seek`, `undo`, `redo`, `compact`, `clear`) is refused,
+because either would take the group apart.
+
 #### Storage
 
 ```C++

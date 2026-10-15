@@ -48,11 +48,19 @@ hive.remove(2, slot);
 hive.undo();             // one block back
 hive.redo();             // and forward again
 hive.compact(2);         // forget everything older than diff 2
+
+hive.begin_transaction(3);          // the ops that follow share diff id 3
+hive.insert("B");
+hive.insert("C");
+hive.commit();                      // keep the group; the ops were applied as they came
+// hive.rollback();                 // or undo the whole group, drop it, end the transaction
 ```
 
 Diff ids start at 1 and never decrease; ids that repeat share one block, and a
-block moves as a unit. `tests/swap_diff_hive_test.cc` documents the rest of the
-behaviour by example.
+block moves as a unit, which is what a transaction is. The payload-only
+`insert`/`remove` need an open transaction; outside one, pass the diff id
+explicitly. `tests/swap_diff_hive_test.cc` documents the rest of the behaviour by
+example.
 
 ## Building and testing
 
