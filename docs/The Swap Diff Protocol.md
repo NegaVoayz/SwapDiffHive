@@ -1,8 +1,14 @@
 ## The Swap Diff Protocol
 
-A general protocol for any struct without pointers to keep a certain length of trace for undo/redo.
+A general protocol for any movable payload type to keep a certain length of trace for undo/redo.
 
-(sometimes pointers inside will work but make sure they are under strict control)
+The payload is only ever moved between slots, never copied, so it does not have
+to be copyable or default constructible and a `std::unique_ptr` is fine -
+ownership is never duplicated. What the type must tolerate is being *relocated*:
+nothing may hold a pointer to a payload across operations, and a type that points
+at its own storage breaks when it is swapped. Removed payloads also stay alive
+until their rollback record is dropped, so a hive can own more payloads than it
+has live elements.
 
 ### Core Design
 
@@ -308,3 +314,4 @@ Or a new operation has applied a new Diff, but in that case the Diff we focus on
 
 - `Container` is a template parameter and defaults to `std::deque`: the slots and the history only ever grow or shrink at the tail, which a deque does without moving the stored payloads.
 - `tests/` covers the protocol: `ctest` runs `free_chain` (the allocation layer on its own) and `hive_protocol` (the examples above, the linear-history invariants, block stepping, compaction and a randomized stress run checked against a model).
+- `README.md` shows how another project consumes the library, by `find_package` or `FetchContent`.
