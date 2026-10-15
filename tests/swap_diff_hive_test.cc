@@ -5,6 +5,7 @@
 #include <iterator>
 #include <map>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -398,6 +399,33 @@ void clearing() {
     check(fresh == 0 && live(h).size() == 1, "the slots and their free lists start over at slot 0");
 }
 
+// operator[] is raw slot access; at() only answers for a slot that is in use.
+void element_access() {
+    std::printf("[operator[] and at()]\n");
+    Hive h;
+    const Id a = h.insert(1, "A");
+    const Id b = h.insert(2, "B");
+    check(h[a] == "A" && h[b] == "B", "operator[] reads a live slot");
+    h[a] = "A2";
+    check(h[a] == "A2", "and it is writable");
+    const Hive& ch = h;
+    check(ch[b] == "B", "the const overload reads too");
+    check(ch.at(b) == "B", "and so does the const at()");
+
+    h.remove(3, a);
+    check(h.at(b) == "B", "at() answers for a slot in use");
+    bool threw = false;
+    try { (void)h.at(a); } catch (const std::out_of_range&) { threw = true; }
+    check(threw, "at() throws for a slot that was removed");
+    threw = false;
+    try { (void)h.at(99); } catch (const std::out_of_range&) { threw = true; }
+    check(threw, "at() throws for a slot that does not exist");
+    check(h[a] == "A2", "operator[] still reaches the removed slot");
+
+    h.seek(2);
+    check(h.at(a) == "A2", "and at() answers again once the slot is back in use");
+}
+
 } // namespace
 
 int main() {
@@ -413,6 +441,7 @@ int main() {
     undo_redo_ops();
     block_steps();
     clearing();
+    element_access();
     vector_container();
     randomized_stress();
     std::printf("failures: %d\n", failures);

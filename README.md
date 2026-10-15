@@ -41,6 +41,9 @@ target_link_libraries(app PRIVATE SwapDiffHive::SwapDiffHive)
 
 SwapDiffHive<std::string> hive;
 const Id slot = hive.insert(1, "A");
+hive[slot];              // raw slot access
+hive.at(slot);           // the same, but throws std::out_of_range when the slot
+                         // is not in use, removed or never handed out
 hive.remove(2, slot);
 hive.undo();             // one block back
 hive.redo();             // and forward again
