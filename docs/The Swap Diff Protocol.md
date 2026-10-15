@@ -121,9 +121,11 @@ restores the slots, the payloads and the free lists.
           return to_diff(Diff::Unary{diff_id, data_id});
       }
 
+      // emplace when the temp array grows: resize() would value-initialise
+      // the new slot and with it require T to be default constructible
       Id temp_id = temp_link.get_empty_slot();
-      temp.resize(std::max(temp.size(), temp_id + 1));
-      temp[temp_id] = Slot{std::move(payload), 0};
+      if (temp_id == temp.size()) temp.emplace_back(std::move(payload), 0);
+      else temp[temp_id] = Slot{std::move(payload), 0};
 
       return to_diff(Diff::Binary{diff_id, data_id, temp_id});
   }
