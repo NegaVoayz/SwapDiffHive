@@ -75,3 +75,8 @@ void FreeChain::flip(size_t p) {
     else if (prev(p) != npos) { remove(p); }
     else free_top = insert_before(p, free_top);
 }
+
+void FreeChain::clear() {
+    link.clear();
+    free_top = npos;
+}

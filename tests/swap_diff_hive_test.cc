@@ -367,6 +367,37 @@ void block_steps() {
     check(h.test_position() == 1 && live(h).size() == 2, "redo from the bottom re-applies the first block");
 }
 
+// clear_history() drops the rollback trail but keeps the state; clear() forgets
+// everything, including the slots and their free lists.
+void clearing() {
+    std::printf("[clear_history() and clear()]\n");
+    Hive h;
+    h.insert(1, "A");
+    const Id b = h.insert(2, "B");
+    h.remove(3, b);
+    h.insert(4, "C");                       // recycles B's slot and parks the old payload
+    check(h.test_history().size() == 4 && live(h).size() == 2, "four diffs behind two live elements");
+
+    h.clear_history();
+    check(h.test_history().empty(), "the history is gone");
+    check(h.test_position() == npos, "and there is no position left in it");
+    check(h.test_temp().empty(), "the temp deque is emptied, records included");
+    check(live(h).size() == 2, "the state itself is untouched");
+    check(live(h).count(b) == 1 && live(h)[b] == "C", "the recycles slot still holds C");
+
+    h.insert(5, "D");
+    check(h.test_history().size() == 1 && h.test_position() == 0, "a new op starts the history again");
+    h.undo();
+    check(live(h).size() == 2, "and that op is undoable in turn");
+    h.redo();
+
+    h.clear();
+    check(h.test_data().empty() && h.test_temp().empty() && h.test_history().empty(), "clear() empties all three");
+    check(h.test_position() == npos, "with nothing applied");
+    const Id fresh = h.insert(1, "A");
+    check(fresh == 0 && live(h).size() == 1, "the slots and their free lists start over at slot 0");
+}
+
 } // namespace
 
 int main() {
@@ -381,6 +412,7 @@ int main() {
     rollback_to_beginning();
     undo_redo_ops();
     block_steps();
+    clearing();
     vector_container();
     randomized_stress();
     std::printf("failures: %d\n", failures);

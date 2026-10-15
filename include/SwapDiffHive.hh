@@ -130,6 +130,22 @@ class SwapDiffHive {
             return true;
         }
 
+        // forget the history and the records it could roll back to: the state
+        // stays as it is and becomes the new baseline
+        void clear_history() {
+            history.clear();
+            current_pos = npos;
+            temp.clear();
+            temp_link.clear();
+        }
+
+        // forget everything, as if the hive had just been constructed
+        void clear() {
+            clear_history();
+            data.clear();
+            data_link.clear();
+        }
+
         // the two steps used instead of seek: exactly one block of equal diff
         // ids back or forward, stepped over the history itself so no fabricated
         // diff id is ever passed around

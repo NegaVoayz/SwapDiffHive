@@ -39,4 +39,6 @@ class FreeChain {
         void use(size_t p);
 
         void flip(size_t p);
+
+        void clear();
 };

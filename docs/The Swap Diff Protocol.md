@@ -243,6 +243,34 @@ restores the slots, the payloads and the free lists.
   Dropping it would make that diff's undo restore a payload with a zeroed book,
   i.e. bring deleted data back as live. Hence the `needed` pass.
 
+* Clear
+
+  ```C++
+  // the state stays, it becomes the new baseline
+  void clear_history() {
+      history.clear();
+      current_pos = npos;
+      temp.clear();
+      temp_link.clear();
+  }
+
+  // forget everything, as if the hive had just been constructed
+  void clear() {
+      clear_history();
+      data.clear();
+      data_link.clear();
+  }
+  ```
+
+  `clear_history()` drops the diffs and the temp records they would need, so
+  nothing can be rolled back any more while the live payloads stay exactly where
+  they are; the current state simply becomes the new baseline. `clear()` goes
+  further and leaves a freshly constructed hive. Both have to reset the free
+  list that belongs to the container they empty, otherwise it would hand out
+  slot numbers that no longer exist. Note that `clear_history()` leaves the
+  deleted slots on the data free list: their stale payloads are released when a
+  later insert moves a new one in.
+
 #### Virtual Slots and Linear History
 
 The prepared data is written into a slot that is still on the free list, so the
