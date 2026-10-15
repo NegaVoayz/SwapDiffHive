@@ -1,6 +1,6 @@
 // Protocol tests for SwapDiffHive, following docs/The Swap Diff Protocol.md.
 // Registered with ctest as "hive_protocol".
-#include "SwapDiffHive.hh"
+#include "SwapDiffHive/SwapDiffHive.hh"
 #include <cstdio>
 #include <iterator>
 #include <map>

@@ -1,6 +1,6 @@
 #include <vector>
-#include "Def.hh"
-#include "FreeChain.hh"
+#include "SwapDiffHive/Def.hh"
+#include "SwapDiffHive/FreeChain.hh"
 
 size_t FreeChain::next(size_t p) const {return link[p].next;}
 size_t& FreeChain::next(size_t p) {return link[p].next;}

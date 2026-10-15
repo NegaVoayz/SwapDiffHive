@@ -1,6 +1,6 @@
 // FreeChain driven through its public API only - the way it is used as the
 // allocation layer of a plain hive, i.e. independently of SwapDiffHive.
-#include "FreeChain.hh"
+#include "SwapDiffHive/FreeChain.hh"
 #include <cstdio>
 
 namespace {
