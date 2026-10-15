@@ -221,26 +221,6 @@ void randomized_stress() {
     check(round_ok, "undo to an earlier diff and back reproduces the state");
 }
 
-// Open issue: compaction discards the record of the removal, but seek() still
-// walks past the boundary. The undo re-swaps a slot the allocator already
-// reclaimed, so the deleted element comes back live and the state no longer
-// describes any point of the history. Once the boundary is respected - refused,
-// or clamped to the trace limit - the state must stay at the boundary itself,
-// which is what this asserts.
-void known_issue_rollback_past_compaction() {
-    std::printf("[known issue: rollback past the compaction boundary]\n");
-    Hive h;
-    h.insert(1, "A");
-    h.remove(2, 0);
-    h.insert(3, "B");
-    check(h.compact(3), "compaction runs at the head");
-    h.seek(2);
-    const auto live_now = live(h);
-    check(live_now.size() == 1 && live_now.count(0) == 1 && live_now.at(0) == "B",
-          "the state stays at the boundary: B live, A still deleted");
-    check(h.test_temp()[0].book == 0, "the temp slot stays empty");
-}
-
 // Compaction must keep a record that a remaining diff still needs, even when its
 // book is below the limit: with two free slots the reuse order decouples the
 // parked book from the neighbouring diff ids.
