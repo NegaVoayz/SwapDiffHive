@@ -107,6 +107,10 @@ The lists and the books always agree:
 
 #### Operations
 
+There are three kinds of diff: `Unary` toggles one slot - its book and its
+membership in the free list - `Replace` parks the payload it displaces in `temp`
+and swaps a new one in, and `Swap` exchanges two slots that are both in use.
+
 Below are the operations, but surprisingly, all `apply_xxx` here are correct for
 both redo & undo for a diff: each one is its own inverse, so running it twice
 restores the slots, the payloads and the free lists.
@@ -143,13 +147,13 @@ restores the slots, the payloads and the free lists.
       if (temp_id == temp.size()) temp.emplace_back(std::move(payload), 0);
       else temp[temp_id] = Slot{std::move(payload), 0};
 
-      return to_diff(Diff::Binary{diff_id, data_id, temp_id});
+      return to_diff(Diff::Replace{diff_id, data_id, temp_id});
   }
 
-  void apply_binary(const Diff::Binary& binary) {
-      std::swap(data[binary.data_id], temp[binary.temp_id]);
-      data_link.flip(binary.data_id);
-      temp_link.flip(binary.temp_id);
+  void apply_replace(const Diff::Replace& replace) {
+      std::swap(data[replace.data_id], temp[replace.temp_id]);
+      data_link.flip(replace.data_id);
+      temp_link.flip(replace.temp_id);
   }
   ```
 
@@ -157,6 +161,29 @@ restores the slots, the payloads and the free lists.
   as "removed at diff_id", while the slot is still on the free list; the apply
   flips that to 0 and takes it off. A recycled slot keeps its own book until the
   swap carries the new payload's book (0) into it.
+
+* Swap
+
+  ```C++
+  Diff prepare_swap(Id diff_id, Id data_a, Id data_b) {
+      if (data_a >= data.size() || data_b >= data.size()) std::terminate();
+      return to_diff(Diff::Swap{diff_id, data_a, data_b});
+  }
+
+  void apply_swap(const Diff::Swap& swap) {
+      if (swap.data_a == swap.data_b) return;
+      std::swap(data[swap.data_a], data[swap.data_b]);
+      if (data[swap.data_a].book) data_link.free(swap.data_a); else data_link.use(swap.data_a);
+      if (data[swap.data_b].book) data_link.free(swap.data_b); else data_link.use(swap.data_b);
+  }
+  ```
+
+  Both slots have to be in use: two live slots have book 0, so exchanging them
+  leaves the free lists untouched and parks nothing in `temp`. That makes a swap
+  the cheapest of the three kinds, and it needs no record, so compaction can
+  never strand one. Swapping a slot that is currently removed is undefined
+  behaviour. A swap of a slot with itself is a no-op, because a move based swap
+  of one object with itself is not safe.
 
 * Commit
 
@@ -232,7 +259,7 @@ restores the slots, the payloads and the free lists.
       // how old the book on it is
       Container<char> needed(temp.size(), 0);
       for (auto it = first_kept; it != history.end(); ++it)
-          if (it->kind == Diff::Kind::Binary) needed[it->binary.temp_id] = 1;
+          if (it->kind == Diff::Kind::Replace) needed[it->replace.temp_id] = 1;
 
       for (Id i = 0; i < temp.size(); ++i)
           if (!needed[i] && temp[i].book && temp[i].book < trace_limit) {
@@ -290,7 +317,7 @@ restores the slots, the payloads and the free lists.
 #### Virtual Slots and Linear History
 
 The prepared data is written into a slot that is still on the free list, so the
-allocator considers the slot empty and available: a Binary insert parks its
+allocator considers the slot empty and available: a Replace insert parks its
 payload in a temp slot whose `book` is 0, and the Unary fast path prepares into
 the data slot with `book == diff_id`. Either way the prepared data is invisible
 to the allocation mechanism: it consumes no additional allocated capacity,

@@ -45,15 +45,25 @@ class SwapDiffHive {
             data[unary.data_id].book ^= unary.diff_id;
             data_link.flip(unary.data_id);
         }
-        void apply_binary(const Diff::Binary& binary) {
-            std::swap(data[binary.data_id], temp[binary.temp_id]);
-            data_link.flip(binary.data_id);
-            temp_link.flip(binary.temp_id);
+        void apply_replace(const Diff::Replace& replace) {
+            std::swap(data[replace.data_id], temp[replace.temp_id]);
+            data_link.flip(replace.data_id);
+            temp_link.flip(replace.temp_id);
+        }
+        void apply_swap(const Diff::Swap& swap) {
+            if (swap.data_a == swap.data_b) return;   // a move based swap of one slot with itself is not safe
+            // both slots are in use, so both books are 0 and the free lists are
+            // untouched; swapping a slot that was removed is undefined
+            std::swap(data[swap.data_a], data[swap.data_b]);
         }
 
         Diff prepare_remove(Id diff_id, Id data_id) {
             if (data_id >= data.size()) std::terminate();
             return to_diff(Diff::Unary{diff_id, data_id});
+        }
+        Diff prepare_swap(Id diff_id, Id data_a, Id data_b) {
+            if (data_a >= data.size() || data_b >= data.size()) std::terminate();
+            return to_diff(Diff::Swap{diff_id, data_a, data_b});
         }
         Diff prepare_insert(Id diff_id, T&& payload) {
             Id data_id = data_link.get_empty_slot();
@@ -70,13 +80,14 @@ class SwapDiffHive {
             if (temp_id == temp.size()) temp.emplace_back(std::move(payload), 0);
             else temp[temp_id] = Slot{std::move(payload), 0};
 
-            return to_diff(Diff::Binary{diff_id, data_id, temp_id});
+            return to_diff(Diff::Replace{diff_id, data_id, temp_id});
         }
 
         void apply_diff(const Diff& d) {
             apply(d,
                 std::bind_front(&SwapDiffHive::apply_unary, this),
-                std::bind_front(&SwapDiffHive::apply_binary, this));
+                std::bind_front(&SwapDiffHive::apply_replace, this),
+                std::bind_front(&SwapDiffHive::apply_swap, this));
         }
 
         // a new Diff always lands at current_pos + 1 and is committed right
@@ -124,6 +135,20 @@ class SwapDiffHive {
             require_open();
             transaction_wrote = true;
             return insert_with(transaction_id, std::move(payload));
+        }
+
+        // exchange two slots: the payloads and the removal books that belong to
+        // them travel together, so the live set and the recoverable payloads
+        // follow them across the two ids
+        void swap(Id diff_id, Id data_a, Id data_b) {
+            require_closed();
+            commit(prepare_swap(diff_id, data_a, data_b));
+        }
+
+        void swap(Id data_a, Id data_b) {
+            require_open();
+            transaction_wrote = true;
+            commit(prepare_swap(transaction_id, data_a, data_b));
         }
 
         // group the ops that follow under one diff id so that they form a single
@@ -206,7 +231,7 @@ class SwapDiffHive {
             // matter how old the book on it is
             Container<char> needed(temp.size(), 0);
             for (auto it = first_kept; it != history.end(); ++it)
-                if (it->kind == Diff::Kind::Binary) needed[it->binary.temp_id] = 1;
+                if (it->kind == Diff::Kind::Replace) needed[it->replace.temp_id] = 1;
 
             for (Id i = 0; i < temp.size(); ++i)
                 if (!needed[i] && temp[i].book && temp[i].book < trace_limit) {

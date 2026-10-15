@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -17,6 +18,7 @@ int failures = 0;
 
 void check(bool ok, const char* what) {
     std::printf("  %s %s\n", ok ? "PASS" : "FAIL", what);
+    std::fflush(stdout);          // keep the log readable if a later check aborts
     if (!ok) ++failures;
 }
 
@@ -488,6 +490,61 @@ void transactions() {
     check(live(h).size() == 3 && h.test_position() == 4, "an empty rollback leaves the state alone");
 }
 
+// Swap exchanges two slots: payloads and their removal books travel together, so
+// the live set and the free lists follow them.
+void swapping() {
+    std::printf("[swap]\n");
+    Hive h;
+    const Id a = h.insert(1, "A");
+    const Id b = h.insert(2, "B");
+    const Id c = h.insert(3, "C");
+
+    h.swap(4, a, c);
+    check(h.at(a) == "C" && h.at(c) == "A" && h.at(b) == "B", "both payloads exchanged");
+    const Id d = h.insert(5, "D");
+    check(d != a && d != b && d != c && live(h).size() == 4,
+          "neither live slot landed on the free list, so the insert had to grow");
+
+    h.undo();
+    h.undo();
+    check(h.at(a) == "A" && h.at(c) == "C", "undo puts the payloads back");
+    h.redo();
+    check(h.at(a) == "C", "and redo exchanges them again");
+    h.redo();
+    check(live(h).size() == 4, "the insert comes back with it");
+
+    h.swap(6, a, a);
+    check(h.at(a) == "C" && live(h).size() == 4, "a self swap is a no-op");
+
+    h.begin_transaction(7);
+    h.swap(a, b);
+    h.commit();
+    check(h.at(a) == "B" && h.at(b) == "C", "a transaction can swap too");
+    h.begin_transaction(8);
+    h.rollback();
+    check(h.at(a) == "B" && h.at(b) == "C", "an empty rollback changes nothing");
+
+    auto refused = [](auto&& fn) {
+        try { fn(); return false; } catch (const std::logic_error&) { return true; }
+    };
+    check(refused([&] { h.swap(a, b); }), "the two-argument form needs an open transaction");
+    h.begin_transaction(9);
+    check(refused([&] { h.swap(10, a, b); }), "and the id-taking form is refused inside one");
+    h.swap(a, b);                      // accepted: this is the transaction form
+    check(h.at(a) == "C" && h.at(b) == "B", "the two-argument form swaps inside one");
+    h.rollback();
+    check(h.at(a) == "B" && h.at(b) == "C", "and its rollback takes the swap back");
+
+    // the swap moves the slots, so a move-only payload works too
+    SwapDiffHive<std::unique_ptr<std::string>> up;
+    const Id p = up.insert(1, std::make_unique<std::string>("P"));
+    const Id q = up.insert(2, std::make_unique<std::string>("Q"));
+    up.swap(3, p, q);
+    check(*up.at(p) == "Q" && *up.at(q) == "P", "a move-only payload swaps too");
+    up.undo();
+    check(*up.at(p) == "P" && *up.at(q) == "Q", "and comes back on undo");
+}
+
 } // namespace
 
 int main() {
@@ -505,6 +562,7 @@ int main() {
     clearing();
     element_access();
     transactions();
+    swapping();
     vector_container();
     randomized_stress();
     std::printf("failures: %d\n", failures);
