@@ -3,6 +3,7 @@
 #include <deque>
 #include <exception>
 #include <functional>
+#include <iterator>
 #include <utility>
 #include "Def.hh"
 #include "Diff.hh"
