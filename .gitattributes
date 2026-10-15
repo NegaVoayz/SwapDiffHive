@@ -1,4 +1,1 @@
-# Normalise text files to LF in the repository and check them out as CRLF,
-# which is what the tracked files already use on Windows. Without this, an
-# editor that writes LF shows up as a whole-file change in byte-level diffs.
-* text=auto eol=crlf
+* text=auto
