@@ -182,16 +182,9 @@ class SwapDiffHive {
 
         // raw slot access: the id has to be a slot of this hive, and a slot that
         // is not in use still holds the payload a rollback would restore
-        T& operator[](Id data_id) { return data[data_id].data; }
         const T& operator[](Id data_id) const { return data[data_id].data; }
 
         // the same, but only for a slot that is in use
-        T& at(Id data_id) {
-            if (data_id >= data.size() || data[data_id].book != 0) {
-                throw std::out_of_range("SwapDiffHive::at: no element at this slot");
-            }
-            return data[data_id].data;
-        }
         const T& at(Id data_id) const {
             if (data_id >= data.size() || data[data_id].book != 0) {
                 throw std::out_of_range("SwapDiffHive::at: no element at this slot");

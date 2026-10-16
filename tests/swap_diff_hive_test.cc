@@ -8,6 +8,8 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -404,15 +406,19 @@ void clearing() {
 // operator[] is raw slot access; at() only answers for a slot that is in use.
 void element_access() {
     std::printf("[operator[] and at()]\n");
+    // access is read only: only remove, insert and swap may change a payload
+    static_assert(std::is_same_v<decltype(std::declval<Hive&>()[0]), const std::string&>,
+                  "operator[] must not hand out a mutable payload");
+    static_assert(std::is_same_v<decltype(std::declval<Hive&>().at(0)), const std::string&>,
+                  "at() must not hand out a mutable payload");
+
     Hive h;
     const Id a = h.insert(1, "A");
     const Id b = h.insert(2, "B");
     check(h[a] == "A" && h[b] == "B", "operator[] reads a live slot");
-    h[a] = "A2";
-    check(h[a] == "A2", "and it is writable");
     const Hive& ch = h;
-    check(ch[b] == "B", "the const overload reads too");
-    check(ch.at(b) == "B", "and so does the const at()");
+    check(ch[b] == "B", "reading through a const hive works too");
+    check(ch.at(b) == "B", "and the const at()");
 
     h.remove(3, a);
     check(h.at(b) == "B", "at() answers for a slot in use");
@@ -422,10 +428,10 @@ void element_access() {
     threw = false;
     try { (void)h.at(99); } catch (const std::out_of_range&) { threw = true; }
     check(threw, "at() throws for a slot that does not exist");
-    check(h[a] == "A2", "operator[] still reaches the removed slot");
+    check(h[a] == "A", "operator[] still reaches the removed slot");
 
     h.seek(2);
-    check(h.at(a) == "A2", "and at() answers again once the slot is back in use");
+    check(h.at(a) == "A", "and at() answers again once the slot is back in use");
 }
 
 // A transaction groups ops under one diff id: they become one block, commit()
